@@ -3,24 +3,37 @@ version: "3.8"
 
 services:
   kafka:
-    image: bitnami/kafka:latest   # or pin: 3.7.0
+    image: bitnami/kafka:latest          # Kafka 3.7+ (KRaft-ready)
     container_name: kafka-kraft
     ports:
-      - "9092:9092"      # client (PLAINTEXT)
-      - "9093:9093"      # internal listener
+      - "9092:9092"                      # secured client port
     environment:
       # KRaft cluster bootstrap:
       KAFKA_CFG_NODE_ID: 1
       KAFKA_CFG_PROCESS_ROLES: controller,broker
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      # Listeners → map external → internal
-      KAFKA_CFG_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-      ALLOW_PLAINTEXT_LISTENER: "yes"   # Bitnami helper
-      # (Optional) create a topic automatically
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      #### Listener with SASL/SCRAM authentication ############################
+      # expose only one client listener, protected by SCRAM-SHA-256
+      KAFKA_CFG_LISTENERS: SASL_PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: SASL_PLAINTEXT://localhost:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+
+      # turn on SCRAM and make brokers talk SCRAM too
+      KAFKA_CFG_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256
+      KAFKA_CFG_SASL_MECHANISM_INTER_BROKER_PROTOCOL: SCRAM-SHA-256
+
+      #### Create users at start-up (comma-separated lists match 1-to-1) ######
+      # *first* user becomes cluster super-admin via ACLs
+      KAFKA_CLIENT_USERS: admin,app
+      KAFKA_CLIENT_PASSWORDS: admin_secret,app_secret
+      KAFKA_CFG_SUPER_USERS: User:admin;User:ANONYMOUS
+
+      ALLOW_PLAINTEXT_LISTENER: "no"                       # disable the fallback
+      KAFKA_CFG_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+#      KAFKA_CFG_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"                # 403 if no ACL
     volumes:
       - kraft_data:/bitnami/kafka
 volumes:
